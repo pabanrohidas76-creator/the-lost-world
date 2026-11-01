@@ -1,0 +1,103 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Lost World</title>
+<style>
+body {
+  background:#17251d;
+  color:white;
+  text-align:center;
+  font-family:Arial;
+}
+canvas {
+  background:#8ccf83;
+  width:100%;
+  max-width:500px;
+  border:3px solid white;
+}
+button {
+  padding:16px 25px;
+  margin:8px;
+  font-size:20px;
+  border-radius:12px;
+}
+</style>
+</head>
+<body>
+
+<h2>🌲 THE LOST WORLD</h2>
+<p>Collect the golden coin!</p>
+
+<canvas id="game" width="500" height="300"></canvas>
+
+<div>
+<button id="left">⬅️</button>
+<button id="right">➡️</button>
+</div>
+
+<script>
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+let player={x:40,y:230,size:30};
+let coin={x:400,y:240,size:16};
+let score=0;
+let left=false,right=false;
+
+function control(id,direction){
+ const btn=document.getElementById(id);
+ btn.addEventListener("pointerdown",e=>{
+  e.preventDefault();
+  direction(true);
+ });
+ btn.addEventListener("pointerup",()=>direction(false));
+ btn.addEventListener("pointerleave",()=>direction(false));
+ btn.addEventListener("pointercancel",()=>direction(false));
+}
+
+control("left",v=>left=v);
+control("right",v=>right=v);
+
+function draw(){
+ ctx.clearRect(0,0,500,300);
+
+ ctx.fillStyle="#426b38";
+ ctx.fillRect(0,270,500,30);
+
+ ctx.fillStyle="#245b32";
+ ctx.fillRect(100,180,20,90);
+ ctx.fillRect(350,170,20,100);
+
+ ctx.fillStyle="gold";
+ ctx.beginPath();
+ ctx.arc(coin.x,coin.y,coin.size,0,Math.PI*2);
+ ctx.fill();
+
+ ctx.fillStyle="#2645b5";
+ ctx.fillRect(player.x,player.y,player.size,player.size);
+
+ ctx.fillStyle="white";
+ ctx.font="18px Arial";
+ ctx.fillText("Score: "+score,15,25);
+
+ if(left) player.x-=3;
+ if(right) player.x+=3;
+
+ player.x=Math.max(0,Math.min(470,player.x));
+
+ if(player.x<coin.x+coin.size &&
+ player.x+player.size>coin.x-coin.size &&
+ player.y<coin.y+coin.size &&
+ player.y+player.size>coin.y-coin.size){
+  score++;
+  coin.x=40+Math.random()*420;
+ }
+
+ requestAnimationFrame(draw);
+}
+draw();
+</script>
+</body>
+</html>
