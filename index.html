@@ -1,103 +1,402 @@
-
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>The Lost World</title>
 <style>
-body {
-  background:#17251d;
-  color:white;
-  text-align:center;
-  font-family:Arial;
+*{box-sizing:border-box}
+body{
+ margin:0;background:#102b20;color:white;
+ font-family:Arial,sans-serif;text-align:center;
+ overflow-x:hidden;touch-action:pan-y;
 }
-canvas {
-  background:#8ccf83;
-  width:100%;
-  max-width:500px;
-  border:3px solid white;
+header{padding:16px 8px 10px}
+h1{font-size:clamp(27px,7vw,42px);margin:5px;color:#ffd84a}
+header p{margin:8px;color:#d8f4d4;font-size:16px}
+#hud{
+ display:flex;justify-content:space-around;gap:8px;
+ max-width:900px;margin:8px auto;padding:10px;
+ font-weight:bold;font-size:15px;
 }
-button {
-  padding:16px 25px;
-  margin:8px;
-  font-size:20px;
-  border-radius:12px;
+.hudbox{background:#244b35;padding:10px 14px;border-radius:12px}
+#game{
+ display:block;width:calc(100% - 20px);max-width:900px;
+ height:auto;margin:5px auto;border:4px solid white;
+ border-radius:12px;background:#8bd77e;
+ touch-action:none;
 }
+#controls{
+ display:flex;justify-content:center;align-items:center;
+ gap:18px;margin:16px auto;max-width:600px;
+}
+.control{
+ width:85px;height:68px;border:3px solid #fff;
+ border-radius:18px;background:#f4f4f4;
+ color:#163b2a;font-size:30px;font-weight:bold;
+ box-shadow:0 5px #aaa;touch-action:none;
+ user-select:none;
+}
+.control:active{transform:translateY(4px);box-shadow:0 1px #aaa}
+#jump{background:#ffcf43}
+#restart{
+ background:#22a66b;color:white;border:0;
+ border-radius:12px;padding:12px 22px;
+ font-size:16px;font-weight:bold;margin:8px;
+}
+#message{min-height:24px;color:#ffe16a;font-weight:bold}
+footer{padding:10px;color:#b9d4c2;font-size:12px}
 </style>
 </head>
 <body>
 
-<h2>🌲 THE LOST WORLD</h2>
-<p>Collect the golden coin!</p>
+<header>
+<h1>🌲 THE LOST WORLD</h1>
+<p>Explore the forest. Collect coins. Find the magic portal!</p>
+</header>
 
-<canvas id="game" width="500" height="300"></canvas>
-
-<div>
-<button id="left">⬅️</button>
-<button id="right">➡️</button>
+<div id="hud">
+ <div class="hudbox">⭐ Score: <span id="score">0</span></div>
+ <div class="hudbox">🪙 Coins: <span id="coins">0</span></div>
+ <div class="hudbox">❤️ Lives: <span id="lives">3</span></div>
 </div>
+
+<canvas id="game" width="900" height="500"></canvas>
+
+<div id="message">Collect coins and reach the golden portal!</div>
+
+<div id="controls">
+ <button class="control" id="left" aria-label="Move left">⬅️</button>
+ <button class="control" id="jump" aria-label="Jump">⬆️</button>
+ <button class="control" id="right" aria-label="Move right">➡️</button>
+</div>
+
+<button id="restart">🔄 Restart Game</button>
+<footer>THE LOST WORLD • A tiny adventure awaits!</footer>
 
 <script>
 const canvas=document.getElementById("game");
 const ctx=canvas.getContext("2d");
+const W=900,H=500;
+const scoreEl=document.getElementById("score");
+const coinsEl=document.getElementById("coins");
+const livesEl=document.getElementById("lives");
+const message=document.getElementById("message");
 
-let player={x:40,y:230,size:30};
-let coin={x:400,y:240,size:16};
-let score=0;
-let left=false,right=false;
+const worldWidth=3500;
+const gravity=0.65;
 
-function control(id,direction){
- const btn=document.getElementById(id);
- btn.addEventListener("pointerdown",e=>{
-  e.preventDefault();
-  direction(true);
- });
- btn.addEventListener("pointerup",()=>direction(false));
- btn.addEventListener("pointerleave",()=>direction(false));
- btn.addEventListener("pointercancel",()=>direction(false));
+let player,score,coinCount,lives,camera;
+let gameOver=false,won=false;
+let keys={left:false,right:false};
+let jumpQueued=false;
+let lastTime=0;
+
+const platforms=[
+ {x:0,y:430,w:700,h:70},
+ {x:800,y:430,w:550,h:70},
+ {x:1460,y:430,w:570,h:70},
+ {x:2140,y:430,w:600,h:70},
+ {x:2840,y:430,w:660,h:70},
+ {x:270,y:350,w:150,h:18},
+ {x:530,y:300,w:130,h:18},
+ {x:900,y:350,w:150,h:18},
+ {x:1120,y:290,w:150,h:18},
+ {x:1530,y:350,w:150,h:18},
+ {x:1760,y:290,w:160,h:18},
+ {x:2210,y:350,w:150,h:18},
+ {x:2440,y:290,w:160,h:18},
+ {x:2920,y:350,w:170,h:18},
+ {x:3190,y:300,w:150,h:18}
+];
+
+let coins=[];
+let trees=[];
+let clouds=[];
+
+function makeWorld(){
+ coins=[];
+ const positions=[
+  [180,385],[330,310],[580,260],[850,385],
+  [970,310],[1160,250],[1510,385],[1600,310],
+  [1800,250],[2180,385],[2280,310],[2480,250],
+  [2900,385],[3000,310],[3240,260],[3370,385]
+ ];
+ positions.forEach(([x,y])=>coins.push({x,y,taken:false}));
+ trees=[];
+ for(let x=80;x<worldWidth;x+=210){
+  trees.push({x:x+Math.random()*60,size:0.7+Math.random()*0.5});
+ }
+ clouds=[];
+ for(let i=0;i<18;i++){
+  clouds.push({x:i*250+40,y:45+Math.random()*110,s:0.7+Math.random()*0.7});
+ }
 }
 
-control("left",v=>left=v);
-control("right",v=>right=v);
+function reset(){
+ player={x:50,y:350,w:34,h:48,vx:0,vy:0,ground:false,face:1};
+ score=0;coinCount=0;lives=3;camera=0;
+ gameOver=false;won=false;
+ keys={left:false,right:false};jumpQueued=false;
+ scoreEl.textContent=score;
+ coinsEl.textContent=coinCount;
+ livesEl.textContent=lives;
+ message.textContent="Collect coins and reach the golden portal!";
+ makeWorld();
+}
 
-function draw(){
- ctx.clearRect(0,0,500,300);
-
- ctx.fillStyle="#426b38";
- ctx.fillRect(0,270,500,30);
-
- ctx.fillStyle="#245b32";
- ctx.fillRect(100,180,20,90);
- ctx.fillRect(350,170,20,100);
-
- ctx.fillStyle="gold";
+function rounded(x,y,w,h,r,color){
+ ctx.fillStyle=color;
  ctx.beginPath();
- ctx.arc(coin.x,coin.y,coin.size,0,Math.PI*2);
+ ctx.roundRect(x,y,w,h,r);
  ctx.fill();
+}
 
- ctx.fillStyle="#2645b5";
- ctx.fillRect(player.x,player.y,player.size,player.size);
+function drawBackground(){
+ let sky=ctx.createLinearGradient(0,0,0,H);
+ sky.addColorStop(0,"#63b9ef");
+ sky.addColorStop(1,"#c8f5b4");
+ ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
 
- ctx.fillStyle="white";
- ctx.font="18px Arial";
- ctx.fillText("Score: "+score,15,25);
+ // Sun
+ ctx.fillStyle="#ffe66d";
+ ctx.beginPath();ctx.arc(770,75,36,0,Math.PI*2);ctx.fill();
 
- if(left) player.x-=3;
- if(right) player.x+=3;
+ // Clouds
+ clouds.forEach(c=>{
+  let x=((c.x-camera*0.22)%(W+200)+W+200)%(W+200)-80;
+  ctx.fillStyle="rgba(255,255,255,.88)";
+  ctx.beginPath();
+  ctx.arc(x,c.y,24*c.s,0,Math.PI*2);
+  ctx.arc(x+28*c.s,c.y-12*c.s,30*c.s,0,Math.PI*2);
+  ctx.arc(x+58*c.s,c.y,23*c.s,0,Math.PI*2);
+  ctx.fill();
+ });
 
- player.x=Math.max(0,Math.min(470,player.x));
+ // distant hills
+ ctx.fillStyle="#8ccf85";
+ ctx.beginPath();ctx.moveTo(0,390);
+ for(let x=0;x<=W;x+=10){
+  ctx.lineTo(x,340+Math.sin((x+camera*.12)/90)*28);
+ }
+ ctx.lineTo(W,500);ctx.lineTo(0,500);ctx.fill();
 
- if(player.x<coin.x+coin.size &&
- player.x+player.size>coin.x-coin.size &&
- player.y<coin.y+coin.size &&
- player.y+player.size>coin.y-coin.size){
-  score++;
-  coin.x=40+Math.random()*420;
+ // Trees
+ trees.forEach(t=>{
+  let x=t.x-camera*.55;
+  if(x < -100 || x > W+100)return;
+  ctx.fillStyle="#74452d";
+  ctx.fillRect(x-8*t.size,330,16*t.size,100);
+  ctx.fillStyle="#237a43";
+  for(let i=0;i<3;i++){
+   ctx.beginPath();
+   ctx.moveTo(x,230*t.size+75+i*38);
+   ctx.lineTo(x-48*t.size,310*t.size+65+i*35);
+   ctx.lineTo(x+48*t.size,310*t.size+65+i*35);
+   ctx.closePath();ctx.fill();
+  }
+ });
+}
+
+function drawPlatforms(){
+ platforms.forEach(p=>{
+  let x=p.x-camera;
+  if(x+p.w<0||x>W)return;
+  ctx.fillStyle="#76502e";
+  ctx.fillRect(x,p.y,p.w,p.h);
+  ctx.fillStyle="#43a047";
+  ctx.fillRect(x,p.y,p.w,9);
+  ctx.fillStyle="#347d3c";
+  for(let i=8;i<p.w;i+=35){
+   ctx.fillRect(x+i,p.y+13,15,5);
+  }
+ });
+}
+
+function drawCoins(){
+ coins.forEach(c=>{
+  if(c.taken)return;
+  let x=c.x-camera;
+  if(x<-30||x>W+30)return;
+  let bob=Math.sin(Date.now()/180+c.x)*4;
+  ctx.fillStyle="#e99b08";
+  ctx.beginPath();ctx.arc(x,c.y+bob,14,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#ffdf35";
+  ctx.beginPath();ctx.arc(x,c.y+bob,10,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#fff4a3";
+  ctx.fillRect(x-3,c.y-6+bob,4,12);
+ });
+}
+
+function drawPlayer(){
+ let x=player.x-camera,y=player.y;
+ // shadow
+ ctx.fillStyle="rgba(0,0,0,.17)";
+ ctx.beginPath();ctx.ellipse(x+17,player.y+player.h+3,19,5,0,0,Math.PI*2);ctx.fill();
+
+ // legs
+ rounded(x+5,y+34,10,14,4,"#273e91");
+ rounded(x+20,y+34,10,14,4,"#273e91");
+ // shoes
+ rounded(x+1,y+43,15,6,3,"#60391e");
+ rounded(x+18,y+43,15,6,3,"#60391e");
+ // body
+ rounded(x+3,y+17,29,22,7,"#ed4940");
+ // face
+ rounded(x+5,y+2,25,24,8,"#ffc78d");
+ // hair
+ ctx.fillStyle="#63391f";
+ ctx.fillRect(x+5,y+1,25,7);
+ // eyes
+ ctx.fillStyle="#202020";
+ ctx.fillRect(x+(player.face===1?23:10),y+11,4,5);
+ // cap
+ rounded(x+2,y-3,29,9,4,"#e33e32");
+ rounded(x+19,y+2,14,5,3,"#b82e2e");
+}
+
+function drawPortal(){
+ let x=3350-camera;
+ ctx.save();
+ ctx.shadowColor="#ffe45c";ctx.shadowBlur=25;
+ ctx.strokeStyle="#ffda43";ctx.lineWidth=12;
+ ctx.beginPath();ctx.ellipse(x,365,32,64,0,0,Math.PI*2);ctx.stroke();
+ ctx.shadowBlur=0;
+ ctx.fillStyle="#fff4a3";
+ ctx.beginPath();ctx.ellipse(x,365,19,50,0,0,Math.PI*2);ctx.fill();
+ ctx.restore();
+ ctx.fillStyle="#fff";ctx.font="bold 17px Arial";
+ ctx.fillText("EXIT",x-19,285);
+}
+
+function update(dt){
+ if(gameOver||won)return;
+ const speed=5.2;
+ player.vx=0;
+ if(keys.left){player.vx=-speed;player.face=-1;}
+ if(keys.right){player.vx=speed;player.face=1;}
+
+ player.x+=player.vx;
+ player.x=Math.max(0,Math.min(worldWidth-player.w,player.x));
+
+ if(jumpQueued&&player.ground){
+  player.vy=-13.5;player.ground=false;
+ }
+ jumpQueued=false;
+
+ let oldBottom=player.y+player.h;
+ player.vy+=gravity;
+ player.vy=Math.min(player.vy,15);
+ player.y+=player.vy;
+ player.ground=false;
+
+ // Platform landing
+ if(player.vy>=0){
+  platforms.forEach(p=>{
+   let horizontal=player.x+player.w>p.x&&player.x<p.x+p.w;
+   let crossed=oldBottom<=p.y+5&&player.y+player.h>=p.y;
+   if(horizontal&&crossed){
+    player.y=p.y-player.h;
+    player.vy=0;player.ground=true;
+   }
+  });
  }
 
- requestAnimationFrame(draw);
+ // Coin collection
+ coins.forEach(c=>{
+  if(c.taken)return;
+  let dx=(player.x+player.w/2)-c.x;
+  let dy=(player.y+player.h/2)-c.y;
+  if(Math.hypot(dx,dy)<30){
+   c.taken=true;coinCount++;score+=10;
+   coinsEl.textContent=coinCount;
+   scoreEl.textContent=score;
+  }
+ });
+
+ // Falling into a gap
+ if(player.y>H+100){
+  lives--;
+  livesEl.textContent=lives;
+  if(lives<=0){
+   gameOver=true;message.textContent="Game Over! Tap Restart to try again.";
+  }else{
+   player.x=Math.max(30,player.x-180);
+   player.y=300;player.vy=0;
+  }
+ }
+
+ if(player.x+player.w>=3350){
+  won=true;score+=50;scoreEl.textContent=score;
+  message.textContent="🏆 YOU FOUND THE LOST WORLD! Amazing!";
+ }
+
+ camera=Math.max(0,Math.min(worldWidth-W,player.x-W*.35));
 }
-draw();
+
+function draw(){
+ drawBackground();
+ drawPlatforms();
+ drawCoins();
+ drawPortal();
+ drawPlayer();
+
+ if(gameOver||won){
+  ctx.fillStyle="rgba(10,30,20,.75)";
+  ctx.fillRect(0,0,W,H);
+  ctx.textAlign="center";
+  ctx.fillStyle="#ffe16a";
+  ctx.font="bold 44px Arial";
+  ctx.fillText(won?"YOU WIN!":"GAME OVER",W/2,220);
+  ctx.fillStyle="white";
+  ctx.font="22px Arial";
+  ctx.fillText(won?"The adventure is complete!":"Try again, brave explorer!",W/2,270);
+  ctx.textAlign="left";
+ }
+}
+
+function loop(time){
+ let dt=Math.min((time-lastTime)/16.67||1,2);
+ lastTime=time;
+ update(dt);
+ draw();
+ requestAnimationFrame(loop);
+}
+
+function bindButton(id,key){
+ const b=document.getElementById(id);
+ b.addEventListener("pointerdown",e=>{
+  e.preventDefault();keys[key]=true;
+  b.setPointerCapture(e.pointerId);
+ });
+ function release(e){e.preventDefault();keys[key]=false;}
+ b.addEventListener("pointerup",release);
+ b.addEventListener("pointercancel",release);
+ b.addEventListener("lostpointercapture",()=>keys[key]=false);
+}
+
+bindButton("left","left");
+bindButton("right","right");
+
+const jumpBtn=document.getElementById("jump");
+jumpBtn.addEventListener("pointerdown",e=>{
+ e.preventDefault();jumpQueued=true;
+});
+
+document.addEventListener("keydown",e=>{
+ if(["ArrowLeft","ArrowRight","ArrowUp"," ","a","d","w"].includes(e.key))e.preventDefault();
+ if(e.key==="ArrowLeft"||e.key==="a")keys.left=true;
+ if(e.key==="ArrowRight"||e.key==="d")keys.right=true;
+ if(e.key==="ArrowUp"||e.key===" "||e.key==="w")jumpQueued=true;
+});
+document.addEventListener("keyup",e=>{
+ if(e.key==="ArrowLeft"||e.key==="a")keys.left=false;
+ if(e.key==="ArrowRight"||e.key==="d")keys.right=false;
+});
+document.getElementById("restart").addEventListener("click",reset);
+
+reset();
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
