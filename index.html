@@ -130,5 +130,11 @@ document.addEventListener('keyup',e=>{if(e.key==='ArrowLeft'||e.key==='a')held.l
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&mode==='play')pause()});
 ctx.fillStyle='#7dd3fc';ctx.fillRect(0,0,W,H);drawBackground();
 })();
+ if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js")
+      .catch((error) => console.log("SW error:", error));
+  });
+ }
 </script>
 </body></html>
