@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#071522"><title>The Lost World — Enhanced</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#071522;color:#fff;font-family:system-ui,Arial;touch-action:none}
+#shell{position:relative;width:min(100vw,160vh);height:min(100vh,62.5vw);max-width:1200px;max-height:750px;margin:auto;top:50%;transform:translateY(-50%);overflow:hidden;border:1px solid #8adfff55;border-radius:18px;box-shadow:0 20px 80px #0009}
+canvas{width:100%;height:100%;display:block}#hud{position:absolute;top:12px;left:14px;right:14px;display:none;justify-content:space-between;gap:8px;pointer-events:none}.pill{background:#061827d9;border:1px solid #ffffff40;border-radius:12px;padding:8px 12px;font-weight:900;font-size:13px}
+#pause{position:absolute;right:14px;top:58px;display:none;background:#061827d9;color:white;border:1px solid #ffffff55;border-radius:10px;padding:9px 13px}
+#overlay{position:absolute;inset:0;display:grid;place-items:center;background:linear-gradient(#06182755,#061827bb);padding:14px}.panel{width:min(92%,480px);padding:28px;text-align:center;border:1px solid #ffffff55;border-radius:24px;background:linear-gradient(145deg,#143b51f5,#061827f5);box-shadow:0 20px 60px #0009}
+.eyebrow{color:#9deeff;font-size:11px;letter-spacing:4px;font-weight:900}.logo{font-size:clamp(38px,8vw,66px);font-weight:1000;line-height:.95;text-shadow:0 5px 0 #14506a}.logo span{color:#ffd166}.sub{color:#c4dce9;line-height:1.6;margin:16px 0 20px}
+.btn{border:0;border-radius:13px;padding:13px 20px;margin:5px;min-width:150px;font-weight:950;background:linear-gradient(#ffe69a,#f0a126);color:#17283a;box-shadow:0 4px #a85f12}.blue{background:linear-gradient(#9af1ff,#239abd);box-shadow:0 4px #12617b}.muted{background:#ffffff18;color:white;border:1px solid #ffffff44;box-shadow:none}
+#controls{position:absolute;bottom:14px;left:14px;right:14px;display:none;justify-content:space-between;pointer-events:none}.group{display:flex;gap:10px;pointer-events:auto}.ctrl{width:64px;height:64px;border-radius:50%;border:1px solid #ffffff70;background:#061827c9;color:white;font-size:25px;font-weight:900;touch-action:none}.jump{width:78px;height:78px;background:linear-gradient(#ffe08a,#e99b23);color:#17283a}
+#toast{position:absolute;top:18%;left:50%;transform:translateX(-50%);background:#061827e8;border:1px solid #ffffff44;padding:9px 15px;border-radius:12px;font-weight:900;opacity:0;white-space:nowrap}
+@media(orientation:portrait){#shell{top:0;transform:none;width:100vw;height:100dvh;max-width:none;max-height:none;border:0;border-radius:0}.panel{padding:22px 16px}}
+@media(max-height:430px){.panel{padding:12px}.sub{margin:8px}.btn{padding:8px}}
+</style></head>
+<body><div id="shell">
+<canvas id="game" width="960" height="600"></canvas>
+<div id="hud"><div><span class="pill">⭐ <b id="score">0</b></span> <span class="pill">🪙 <b id="coins">0</b></span></div><div><span class="pill">❤️ <b id="lives">3</b></span> <span class="pill"><b id="world">JUNGLE</b> · <b id="level">1</b></span></div></div>
+<button id="pause">Ⅱ</button><div id="toast"></div>
+<div id="overlay"><div class="panel" id="panel"><div class="eyebrow">AN ADVENTURE BEYOND THE MAP</div><div class="logo">THE <span>LOST</span><br>WORLD</div><div class="sub">Explore ancient places, collect hidden treasures and find the portal.</div><div style="margin:12px 0;color:#d9edf7;font-weight:800">CHOOSE YOUR CHARACTER</div><button class="btn blue" id="male">♂ MALE</button><button class="btn muted" id="female">♀ FEMALE</button><br><button class="btn" id="start">▶ START ADVENTURE</button><br><button class="btn blue" id="how">HOW TO PLAY</button><div class="sub" style="font-size:11px">EXPLORE · COLLECT · DISCOVER<br>Progress saves on this device</div></div></div>
+<div id="controls"><div class="group"><button class="ctrl" id="left">◀</button><button class="ctrl" id="right">▶</button></div><div class="group"><button class="ctrl jump" id="jump">⬆</button></div></div>
+</div>
+<script>
+(()=>{
+const c=document.querySelector('canvas'),x=c.getContext('2d'),$=id=>document.getElementById(id),W=960,H=600,G=510;
+const themes=[
+['#50b9df','#d8f2c5','#376f63','#684832','#438d50','#c8f27b','JUNGLE'],
+['#f29a65','#ffe0a4','#b87551','#825039','#d3a15d','#ffe8a2','DESERT'],
+['#6aa9df','#e5f5ff','#779bbd','#526d88','#b7ddeb','#effbff','FROST'],
+['#e88a58','#ffd1a0','#8c554b','#543d43','#b85d3f','#ffd18b','VOLCANO'],
+['#2c9fba','#b5e9dc','#286d78','#31575a','#3e9c83','#b7fff0','OCEAN'],
+['#8874c9','#e9c8ee','#65518d','#41365f','#8c72bd','#f2d2ff','MAGIC FOREST']];
+let character='male';
+let mode='menu',world=1,level=1,score=0,coins=0,lives=3,frame=0,camera=0,toast=0,held={left:false,right:false,jump:false},audio=null;
+let player,platforms,items,enemies,flags,portal,particles,worldW=3200;
+let saved={};try{saved=JSON.parse(localStorage.getItem('lostWorldEnhanced')||'{}')}catch(e){}
+function save(){try{localStorage.setItem('lostWorldEnhanced',JSON.stringify({world,level,score,coins}))}catch(e){}}
+function beep(f=500,d=.08){try{audio=audio||new(window.AudioContext||window.webkitAudioContext)();let o=audio.createOscillator(),g=audio.createGain();o.frequency.value=f;g.gain.value=.04;g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+d);o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+d)}catch(e){}}
+function msg(t){$('toast').textContent=t;$('toast').style.opacity=1;toast=100}
+function hud(v){$('hud').style.display=v?'flex':'none';$('controls').style.display=v?'flex':'none';$('pause').style.display=v?'block':'none'}
+function updateHud(){$('score').textContent=score;$('coins').textContent=coins;$('lives').textContent=lives;$('world').textContent=themes[(world-1)%themes.length][6];$('level').textContent=level}
+function show(title,sub,buttons){mode='menu';hud(false);$('overlay').style.display='grid';$('panel').innerHTML='<div class="eyebrow">THE LOST WORLD</div><div class="logo">'+title+'</div><div class="sub">'+sub+'</div>'+buttons}
+function build(){
+ camera=0;frame=0;worldW=3200+(level-1)*180;
+ player={x:70,y:390,w:38,h:52,vx:0,vy:0,on:false,inv:0,checkpoint:70,face:1,walk:0};
+ platforms=[{x:0,y:G,w:560,h:100},{x:650,y:G,w:430,h:100},{x:1170,y:G,w:470,h:100},{x:1740,y:G,w:470,h:100},{x:2310,y:G,w:worldW-2310,h:100}];
+ let layouts=[[[260,420,145],[760,405,145],[1010,345,130],[1320,420,140],[1540,350,140],[1850,415,150],[2110,350,135],[2460,410,150],[2730,340,145]],[[220,400,150],[480,350,125],[800,420,150],[1040,355,135],[1300,390,145],[1580,330,130],[1900,410,150],[2170,350,135],[2500,400,155],[2800,335,140]],[[300,390,150],[590,330,130],[870,410,150],[1110,340,140],[1400,390,145],[1660,320,135],[1960,400,150],[2250,330,140],[2580,390,150],[2860,325,145]]];
+ layouts[(level-1)%3].forEach(p=>platforms.push({x:p[0],y:p[1],w:p[2],h:18}));
+ items=[];for(let a=170;a<worldW-150;a+=115){let y=G-55;for(let p of platforms)if(a>p.x&&a<p.x+p.w&&p.y<y+30&&p.y>y-115)y=p.y-35;items.push({x:a,y:y-Math.sin(a*.017)*13,taken:false,phase:a*.1})}
+ let xs=level===1?[450,900,1450,1980,2600]:level===2?[400,700,1240,1700,2180,2700]:[500,950,1380,1850,2350,2850];
+ enemies=xs.map((a,i)=>({x:a,y:G-34,w:38,h:34,min:a-75,max:a+75,dir:i%2?-1:1,alive:true,speed:1.1+level*.18}));
+ flags=[{x:Math.floor(worldW*.48),active:false},{x:Math.floor(worldW*.77),active:false}];portal={x:worldW-105,y:G-100,w:58,h:100};particles=[];
+}
+function burst(a,b,color,n=10){for(let i=0;i<n;i++){let q=Math.random()*6.28,s=1+Math.random()*4;particles.push({x:a,y:b,vx:Math.cos(q)*s,vy:Math.sin(q)*s-1,life:35,color})}}
+function start(fresh=false){if(fresh){world=1;level=1;score=0;coins=0}else{world=saved.world||1;level=saved.level||1;score=saved.score||0;coins=saved.coins||0}lives=3;build();mode='play';$('overlay').style.display='none';hud(true);updateHud();requestAnimationFrame(loop)}
+function next(){level++;if(level>3){level=1;world=world%themes.length+1}score+=300;save();build();updateHud();msg(themes[(world-1)%themes.length][6]+' · LEVEL '+level);beep(700,.15)}
+function damage(){if(player.inv)return;lives--;player.inv=100;player.vy=-7;player.vx=-player.face*4;updateHud();beep(130,.18);if(lives<=0){save();show('ADVENTURE<br>OVER','The world is still waiting. Try again?', '<button class="btn" id="retry">↻ TRY AGAIN</button><br><button class="btn blue" id="home">MAIN MENU</button>');$('retry').onclick=()=>start(true);$('home').onclick=()=>location.reload()}}
+function rr(a,b,w,h,r,col){x.fillStyle=col;x.beginPath();x.roundRect(a,b,w,h,r);x.fill()}
+function sky(){
+let t=themes[(world-1)%themes.length],g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,t[0]);g.addColorStop(.62,t[1]);g.addColorStop(1,'#d8e8d0');x.fillStyle=g;x.fillRect(0,0,W,H);
+// distant sun / moon and soft clouds
+x.save();x.globalAlpha=.72;x.shadowColor=t[5];x.shadowBlur=45;x.fillStyle=t[5];x.beginPath();x.arc(770,105,world===3?31:43,0,Math.PI*2);x.fill();x.restore();
+for(let i=0;i<6;i++){let a=((i*245-camera*.10)%1300+1300)%1300-160; x.globalAlpha=.22;x.fillStyle='#fff';x.beginPath();x.ellipse(a+40,105+(i%3)*32,54,13,0,0,7);x.ellipse(a+72,101+(i%3)*32,35,17,0,0,7);x.fill()}x.globalAlpha=1;
+// layered mountain ranges with snow caps
+for(let layer=0;layer<3;layer++){let shift=camera*(.08+layer*.07),base=G+layer*15;x.fillStyle=[t[2],t[3],'#344d4a'][layer];x.beginPath();x.moveTo(0,H);for(let i=-1;i<8;i++){let a=i*210-(shift%210);let peak=185+layer*58+(i%3)*30;x.lineTo(a,base);x.lineTo(a+105,peak);x.lineTo(a+210,base)}x.lineTo(W,H);x.closePath();x.globalAlpha=[.40,.62,.88][layer];x.fill();x.globalAlpha=1;
+// pale rocky/snow highlight on peaks
+x.fillStyle=world===3?'#f5fcff':'#f8f1df';x.globalAlpha=world===3?.82:.38;x.beginPath();for(let i=-1;i<8;i++){let a=i*210-(shift%210),peak=185+layer*58+(i%3)*30;x.moveTo(a+105,peak);x.lineTo(a+82,peak+35);x.lineTo(a+105,peak+25);x.lineTo(a+123,peak+38)}x.fill();x.globalAlpha=1}
+// foreground forest: many varied tree silhouettes
+for(let i=0;i<24;i++){let a=((i*91-camera*.38)%1200+1200)%1200-90,base=G-(i%3)*7,h=75+(i%5)*17,w=23+(i%4)*5;
+if(world===2){x.fillStyle='#76513b';x.fillRect(a+w*.42,base-h*.45,w*.18,h*.45);x.fillStyle='#4e8d60';for(let k=0;k<3;k++){x.beginPath();x.arc(a+w/2,base-h*.45-k*15,w*.62-k*5,0,7);x.fill()}}
+else if(world===3){x.fillStyle='#526c83';x.fillRect(a+w*.42,base-h*.5,w*.18,h*.5);x.fillStyle='#e9f8ff';x.beginPath();x.moveTo(a,base-h*.35);x.lineTo(a+w/2,base-h);x.lineTo(a+w,base-h*.35);x.closePath();x.fill()}
+else if(world===4){x.fillStyle='#453c42';x.fillRect(a+w*.42,base-h*.55,w*.2,h*.55);x.fillStyle='#a94e39';x.beginPath();x.moveTo(a-8,base-h*.35);x.lineTo(a+w/2,base-h);x.lineTo(a+w+8,base-h*.35);x.closePath();x.fill()}
+else {x.fillStyle=world===5?'#246b65':'#684b38';x.fillRect(a+w*.4,base-h*.5,w*.2,h*.5);x.fillStyle=world===6?'#7051a4':world===5?'#268e82':'#267b4f';for(let k=0;k<4;k++){x.beginPath();x.ellipse(a+w/2,base-h*.42-k*13,w*(.8-k*.12),h*.18,0,0,7);x.fill()}if(world===1){x.strokeStyle='#3b8058';x.lineWidth=4;x.beginPath();x.moveTo(a+w/2,base-h*.6);x.quadraticCurveTo(a-20,base-h*.75,a-16,base-h*.9);x.moveTo(a+w/2,base-h*.6);x.quadraticCurveTo(a+w+22,base-h*.8,a+w+17,base-h*.94);x.stroke()}}
+}
+// foreground grass / shoreline detail
+x.fillStyle=world===5?'#2b8b82':'#527c4a';x.globalAlpha=.32;x.fillRect(0,G-7,W,8);x.globalAlpha=1;
+}
+function draw(){let t=themes[(world-1)%themes.length];sky();x.save();x.translate(-camera,0);
+for(let p of platforms){rr(p.x,p.y,p.w,p.h,7,t[3]);rr(p.x,p.y,p.w,13,6,t[4]);x.fillStyle='#ffffff20';for(let a=p.x+18;a<p.x+p.w-8;a+=42)x.fillRect(a,p.y+23,3,7)}
+for(let q of items)if(!q.taken){x.save();x.translate(q.x,q.y);x.scale(.35+Math.abs(Math.cos(frame*.075+q.phase))*.65,1);x.shadowColor=t[5];x.shadowBlur=14;x.fillStyle=t[5];x.beginPath();x.ellipse(0,0,10,13,0,0,7);x.fill();x.restore()}
+for(let e of enemies)if(e.alive){rr(e.x,e.y+4,e.w,e.h-4,11,world===3?'#457fa5':world===2?'#a85a3d':'#a84249');x.fillStyle='white';x.fillRect(e.x+8,e.y+12,7,8);x.fillRect(e.x+24,e.y+12,7,8);x.fillStyle='#17202a';x.fillRect(e.x+10,e.y+14,3,5);x.fillRect(e.x+26,e.y+14,3,5)}
+for(let f of flags){x.fillStyle='#f4f4ed';x.fillRect(f.x,G-88,5,88);x.fillStyle=f.active?'#4df0ae':'#ffd166';x.beginPath();x.moveTo(f.x+5,G-86);x.lineTo(f.x+54,G-70);x.lineTo(f.x+5,G-53);x.fill()}
+x.save();x.shadowColor='#7af4ff';x.shadowBlur=26;x.strokeStyle='#a0f7ff';x.lineWidth=7;x.beginPath();x.ellipse(portal.x+29,portal.y+49,25,46,0,0,7);x.stroke();x.restore();x.fillStyle='#eaffff';x.beginPath();x.ellipse(portal.x+29,portal.y+49,12,30,0,0,7);x.fill();
+let p=player;if(!(p.inv&&Math.floor(frame/5)%2===0)){x.fillStyle='#142d3c55';x.beginPath();x.ellipse(p.x+19,p.y+55,19,5,0,0,7);x.fill();let bob=p.on&&Math.abs(p.vx)>.5?Math.sin(p.walk)*3:0;let coat=character==='female'?'#bd4f91':'#176da5';rr(p.x+5,p.y+18+bob,29,29,character==='female'?11:8,coat);if(character==='female'){x.fillStyle='#e56eae';x.beginPath();x.moveTo(p.x+5,p.y+29+bob);x.lineTo(p.x+34,p.y+29+bob);x.lineTo(p.x+38,p.y+47+bob);x.lineTo(p.x+2,p.y+47+bob);x.fill()}rr(p.x+7,p.y+2+bob,25,23,9,'#f1c49a');if(character==='female'){rr(p.x+5,p.y-2+bob,28,11,7,'#35253a');x.fillStyle='#35253a';x.beginPath();x.arc(p.x+7,p.y+12+bob,6,0,7);x.arc(p.x+31,p.y+12+bob,6,0,7);x.fill()}else{rr(p.x+5,p.y+bob,29,8,5,'#49352b')}rr(p.x+4,p.y+bob,30,7,5,character==='female'?'#f3c0dc':'#f0ad36');x.fillStyle='#172533';x.fillRect(p.x+(p.face>0?24:11),p.y+11+bob,4,5);rr(p.x+5,p.y+44+bob,13,9,4,'#26384b');rr(p.x+21,p.y+44+bob,13,9,4,'#26384b')}
+x.restore();for(let q of particles){x.globalAlpha=Math.max(0,q.life/35);x.fillStyle=q.color;x.fillRect(q.x-camera,q.y,5,5)}x.globalAlpha=1}
+function hit(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y}
+function update(){frame++;let p=player;if(p.inv)p.inv--;let d=(held.right?1:0)-(held.left?1:0);if(d){p.vx+=d*.72;p.face=d;p.walk+=.23}else p.vx*=.82;p.vx=Math.max(-5.8,Math.min(5.8,p.vx));if(held.jump&&p.on){p.vy=-13.7;p.on=false;beep(500,.07)}p.vy=Math.min(14,p.vy+.62);let old=p.y;p.x=Math.max(0,Math.min(worldW-p.w,p.x+p.vx));p.y+=p.vy;p.on=false;
+for(let q of platforms)if(p.x+p.w>q.x&&p.x<q.x+q.w&&old+p.h<=q.y+9&&p.y+p.h>=q.y&&p.vy>=0){p.y=q.y-p.h;p.vy=0;p.on=true}
+if(p.y>H+100){p.x=p.checkpoint;p.y=300;p.vy=0;damage()}
+for(let e of enemies)if(e.alive){e.x+=e.dir*e.speed;if(e.x<e.min||e.x>e.max)e.dir*=-1;if(hit(p,e)){if(p.vy>1&&old+p.h<e.y+15){e.alive=false;p.vy=-9;score+=100;burst(e.x+18,e.y+15,'#ffe08a');beep(740,.08);updateHud()}else damage()}}
+for(let q of items)if(!q.taken&&Math.hypot(p.x+p.w/2-q.x,p.y+p.h/2-q.y)<30){q.taken=true;coins++;score+=15;burst(q.x,q.y,'#ffe36c',8);beep(900,.05);updateHud()}
+for(let f of flags)if(!f.active&&p.x>f.x){f.active=true;p.checkpoint=f.x+12;msg('CHECKPOINT SAVED');beep(620,.12)}
+if(hit(p,portal))next();camera=Math.max(0,Math.min(worldW-W,p.x-W*.36));
+particles=particles.filter(q=>q.life>0);for(let q of particles){q.x+=q.vx;q.y+=q.vy;q.vy+=.12;q.life--}
+if(toast&&!--toast)$('toast').style.opacity=0;if(frame%240===0)save()}
+function loop(){if(mode!=='play')return;update();draw();requestAnimationFrame(loop)}
+function hold(id,key){let el=$(id),down=e=>{e.preventDefault();held[key]=true},up=e=>{e.preventDefault();held[key]=false};el.addEventListener('pointerdown',down);['pointerup','pointercancel','pointerleave'].forEach(v=>el.addEventListener(v,up))}
+hold('left','left');hold('right','right');hold('jump','jump');
+$('male').onclick=()=>{character='male';$('male').className='btn blue';$('female').className='btn muted'};$('female').onclick=()=>{character='female';$('female').className='btn blue';$('male').className='btn muted'};$('start').onclick=()=>start();$('how').onclick=()=>{show('HOW TO PLAY','Reach the glowing portal to complete each level.','<p>◀ ▶ Move · ⬆ Jump</p><p>Collect coins for points</p><p>Jump over creatures and gaps</p><p>Reach flags to save checkpoints</p><button class="btn" id="back">GOT IT</button>');$('back').onclick=()=>location.reload()};
+$('pause').onclick=()=>{if(mode!=='play')return;save();show('PAUSED','Your progress is saved.','<button class="btn" id="resume">▶ RESUME</button><br><button class="btn blue" id="home">MAIN MENU</button>');$('resume').onclick=()=>{mode='play';$('overlay').style.display='none';requestAnimationFrame(loop)};$('home').onclick=()=>location.reload()};
+document.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='a')held.left=true;if(e.key==='ArrowRight'||e.key==='d')held.right=true;if(e.key==='ArrowUp'||e.key===' '||e.key==='w')held.jump=true;if(e.key==='Escape')$('pause').click()});
+document.addEventListener('keyup',e=>{if(e.key==='ArrowLeft'||e.key==='a')held.left=false;if(e.key==='ArrowRight'||e.key==='d')held.right=false;if(e.key==='ArrowUp'||e.key===' '||e.key==='w')held.jump=false});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&mode==='play')$('pause').click()});
+sky();
+})();
+</script></body></html>
